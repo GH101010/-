@@ -4,6 +4,8 @@
 https://www.python.org/downloads/
 
 
+
+
 독케익 성대모사 팬게임입니다
 
 "Voice Mimicry Show" 게임을 참고하여 제작하였습니다
