@@ -6,7 +6,7 @@
   <!-- Gamja Flower 웹폰트 추가 -->
   <link href="https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap" rel="stylesheet">
   <style>
-    /* 루트 폰트 사이즈를 브라우저 기본보다 2px 크게 설정 (앞서 적용됨) */
+    /* 루트 폰트 사이즈를 브라우저 기본보다 2px 크게 설정 */
     html { font-size: calc(100% + 2px); }
 
     /* 기본 리셋 / 박스 사이징 */
@@ -89,6 +89,48 @@
       object-fit: contain;
     }
 
+    /* 스테이지 버튼 기본 스타일 */
+    .stageBtn {
+      margin-right: 6px;
+      width: 40px;
+      background: #f0f0f0;
+      border: 1px solid #bbb;
+      color: #111;
+      padding: 6px 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+    .stageBtn:hover { transform: translateY(-2px); }
+
+    /* 50점 이상: 연한 초록 표시 */
+    .stageBtn.cleared50 {
+      background-color: #5cc27a;
+      color: #fff;
+      border-color: #3da65a;
+      box-shadow: 0 6px 14px rgba(46, 125, 50, 0.12);
+    }
+
+    /* 70점 이상: 금색 그라데이션 (우선권) */
+    .stageBtn.cleared70 {
+      background-image: linear-gradient(180deg, #ffd86b 0%, #f6c85b 40%, #e8a834 100%);
+      color: #2b1a00;
+      border: 1px solid rgba(138, 94, 0, 0.9);
+      text-shadow: 0 1px 0 rgba(255,255,255,0.25);
+      box-shadow: 0 6px 18px rgba(184, 140, 30, 0.18);
+    }
+
+    /* 최고점 라벨: 제목 아래, 폰트 2배, 검은색 */
+    #bestScoreLabel {
+      display: block;
+      margin-top: 8px;
+      font-size: 1.8rem;
+      color: #000;
+      opacity: 1;
+      font-family: 'Gamja Flower', cursive;
+      font-weight: normal;
+    }
+
     /* 나머지 레이아웃 및 요소 스타일 */
     #resultSection { margin-top: 12px; }
     #overlapWave {
@@ -135,7 +177,8 @@
       font-family: 'Gamja Flower', cursive;
       font-size: calc(2.4em + 4px);
       font-weight: normal;
-      margin-bottom: 16px;
+      margin-bottom: 4px;
+      display: block;
     }
 
     /* 전체 과정 바 기본 숨김 상태 유지 */
@@ -160,6 +203,7 @@
       #titleImage { max-height: calc(100vh - 160px); width: 50%; max-width: 320px; }
       #mainScreen { padding: 12px; }
       #mainScreen > h1 { font-size: 2.0rem; margin-bottom: 10px; }
+      #bestScoreLabel { font-size: 1.4rem; }
     }
   </style>
 </head>
@@ -191,12 +235,10 @@
     <canvas id="testWave" width="600" height="80"></canvas>
     <button id="micTestBackBtn">돌아가기</button>
 
-    <!-- 추가된 마이크 설명 이미지: 권장 파일명 images/mic.png (한글명인 경우 images/마이크.png로 변경 가능)
-         onerror로 실패시 콘솔에 에러를 찍고 이미지 숨김(또는 대체 이미지를 시도) -->
     <img id="micTestImage"
          src="images/mic.png"
          alt="마이크 설명 이미지"
-         onerror="(function(el){ console.error('마이크 이미지 로드 실패:', el.src); /* 실패시 숨김 또는 대체 이미지 사용 */ el.style.display='none'; })(this);">
+         onerror="(function(el){ console.error('마이크 이미지 로드 실패:', el.src); el.style.display='none'; })(this);">
   </div>
 
   <!-- 스테이지 선택 화면 -->
@@ -209,7 +251,12 @@
   <!-- 게임 화면 -->
   <div id="gameScreen" class="hidden">
     <button id="gameBackBtn">스테이지 선택으로 돌아가기</button>
-    <h2 id="currentSampleName"></h2>
+
+    <div>
+      <h2 id="currentSampleName"></h2>
+      <div id="bestScoreLabel">최고 점수: --점</div>
+    </div>
+
     <div id="gameBtnRow">
       <button id="playSampleBtn">샘플 듣기</button>
       <button id="challengeBtn">도전하기</button>
