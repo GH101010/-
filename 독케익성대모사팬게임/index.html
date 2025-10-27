@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>독케익 성대모사 테스트</title>
+  <!-- Gamja Flower 웹폰트 추가 -->
+  <link href="https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap" rel="stylesheet">
+  <style>
+    /* 루트 폰트 사이즈를 브라우저 기본보다 2px 크게 설정 (앞서 적용됨) */
+    html { font-size: calc(100% + 2px); }
+
+    /* 기본 리셋 / 박스 사이징 */
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Gamja Flower', cursive;
+      background: #F7F7E9;
+      transition: background 0.3s;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .hidden { display: none !important; }
+
+    /* 화면들을 상단 정렬 */
+    #mainScreen, #micTestScreen, #stageScreen, #gameScreen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      min-height: 100vh;
+      width: 100%;
+      text-align: center;
+      padding: 20px 20px 40px 20px;
+      background: inherit;
+      transition: background 0.3s;
+    }
+
+    /* 배경색 선택 UI */
+    #bgColorSelectRow {
+      display: flex;
+      gap: 16px;
+      justify-content: center;
+      align-items: center;
+      margin-bottom: 18px;
+      font-family: 'Gamja Flower', cursive;
+    }
+
+    .bgColorBtn {
+      border: none;
+      border-radius: 18px;
+      width: 38px;
+      height: 38px;
+      cursor: pointer;
+      outline: 2px solid #aaa;
+      transition: outline 0.2s;
+      background-clip: padding-box;
+    }
+    .bgColorBtn.selected { outline: 4px solid #297; }
+
+    /* 타이틀과 버튼 간격 최적화 */
+    #mainScreen > h1 {
+      font-size: 2.4rem;
+      margin: 8px 0 12px 0;
+      line-height: 1.1;
+    }
+    button {
+      margin: 6px;
+      font-family: 'Gamja Flower', cursive !important;
+      font-size: 1.05em;
+      letter-spacing: 0.02em;
+    }
+
+    /* 타이틀 이미지 스타일 (메인 화면 하단) */
+    #titleImage {
+      display: block;
+      margin: 18px auto 10px auto;
+      width: 40%;
+      max-width: 380px;
+      height: auto;
+      max-height: min(50vh, calc(100vh - 220px));
+      border-radius: 10px;
+      box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+      object-fit: contain;
+    }
+
+    /* 나머지 레이아웃 및 요소 스타일 */
+    #resultSection { margin-top: 12px; }
+    #overlapWave {
+      border: 1px solid #333;
+      background: #fafafa;
+      display: block;
+      margin: 0 auto;
+      width: 800px;
+      max-width: 95vw;
+      height: 200px;
+    }
+    #countdown { font-size: 2em; color: red; margin: 12px 0; }
+
+    /* 점수 텍스트 */
+    #scoreResult {
+      font-size: calc(1.2em + 16px);
+      color: blue;
+      margin-top: 12px;
+      text-align: center;
+    }
+
+    #liveWave, #testWave {
+      border: 1px solid #aaa;
+      margin-top: 10px;
+      display: block;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* 스테이지 목록의 각 스테이지 제목 */
+    .person-label {
+      font-weight: bold;
+      margin-right: 8px;
+      display: inline-block;
+      font-size: calc(1.2em + 4px);
+    }
+    .stageBtn { margin-right: 6px; width: 40px; }
+
+    #stageList { width: 100%; display: flex; flex-direction: column; align-items: center; }
+    #stageList > .stage-row { margin-bottom: 12px; display:flex; align-items:center; justify-content:center; }
+
+    /* 현재 선택된 샘플 제목 (게임 화면) */
+    #currentSampleName {
+      font-family: 'Gamja Flower', cursive;
+      font-size: calc(2.4em + 4px);
+      font-weight: normal;
+      margin-bottom: 16px;
+    }
+
+    /* 전체 과정 바 기본 숨김 상태 유지 */
+    #fullProcessBar { display: none; margin: 18px auto 0 auto; background: #fff; width: 800px; max-width: 95vw; }
+    #fullProcessTime { display: none; font-size: 1.1em; margin-left: 12px; vertical-align: middle; }
+
+    #userProgress, #userTime { display: none !important; }
+
+    /* 마이크 설명 이미지 스타일 */
+    #micTestImage {
+      margin-top: 24px;
+      max-width: 500px;
+      width: 90vw;
+      border-radius: 12px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+      background: #ececec;
+      display: block;
+    }
+
+    /* 반응형: 세로가 아주 짧은 화면에서는 이미지보다 텍스트/버튼이 우선 보이게 함 */
+    @media (max-height: 600px) {
+      #titleImage { max-height: calc(100vh - 160px); width: 50%; max-width: 320px; }
+      #mainScreen { padding: 12px; }
+      #mainScreen > h1 { font-size: 2.0rem; margin-bottom: 10px; }
+    }
+  </style>
+</head>
+<body>
+  <!-- 메인 화면 -->
+  <div id="mainScreen" class="">
+    <!-- 배경색 선택 UI -->
+    <div id="bgColorSelectRow">
+      <span id="bgColorLabel">배경색 선택:</span>
+      <button class="bgColorBtn" id="bgBtn0" style="background: #F7F7E9;" title="아이보리"></button>
+      <button class="bgColorBtn" id="bgBtn1" style="background: #ECECEC;" title="밝은 회색"></button>
+      <button class="bgColorBtn" id="bgBtn2" style="background: #FFFDE4;" title="크림색"></button>
+      <button class="bgColorBtn" id="bgBtn3" style="background: #E6F4EA;" title="연한 민트"></button>
+      <button class="bgColorBtn" id="bgBtn4" style="background: #EAF6FB;" title="밝은 하늘색"></button>
+    </div>
+
+    <h1>독케익 성대모사 테스트</h1>
+    <button id="goStageBtn">보이스 선택</button>
+    <button id="goMicTestBtn">마이크 테스트</button>
+
+    <!-- 메인 화면 하단 타이틀 이미지 -->
+    <img id="titleImage" src="images/title.jpg" alt="타이틀 이미지">
+
+  </div>
+
+  <!-- 마이크 테스트 화면 -->
+  <div id="micTestScreen" class="hidden">
+    <h2>마이크 테스트</h2>
+    <canvas id="testWave" width="600" height="80"></canvas>
+    <button id="micTestBackBtn">돌아가기</button>
+
+    <!-- 추가된 마이크 설명 이미지: 권장 파일명 images/mic.png (한글명인 경우 images/마이크.png로 변경 가능)
+         onerror로 실패시 콘솔에 에러를 찍고 이미지 숨김(또는 대체 이미지를 시도) -->
+    <img id="micTestImage"
+         src="images/mic.png"
+         alt="마이크 설명 이미지"
+         onerror="(function(el){ console.error('마이크 이미지 로드 실패:', el.src); /* 실패시 숨김 또는 대체 이미지 사용 */ el.style.display='none'; })(this);">
+  </div>
+
+  <!-- 스테이지 선택 화면 -->
+  <div id="stageScreen" class="hidden">
+    <h2>보이스 선택</h2>
+    <div id="stageList"></div>
+    <button id="stageBackBtn">뒤로가기</button>
+  </div>
+
+  <!-- 게임 화면 -->
+  <div id="gameScreen" class="hidden">
+    <button id="gameBackBtn">스테이지 선택으로 돌아가기</button>
+    <h2 id="currentSampleName"></h2>
+    <div id="gameBtnRow">
+      <button id="playSampleBtn">샘플 듣기</button>
+      <button id="challengeBtn">도전하기</button>
+    </div>
+    <div>
+      <progress id="sampleProgress" value="0" max="100"></progress>
+      <span id="sampleTime">00:00 / 00:00</span>
+    </div>
+    <audio id="sampleAudio"></audio>
+    <div id="countdown"></div>
+    <canvas id="fullProcessBar" width="800" height="70"></canvas>
+    <span id="fullProcessTime"></span>
+    <canvas id="liveWave" width="600" height="80" class="hidden"></canvas>
+    <div id="resultSection" class="hidden">
+      <h3>결과 화면</h3>
+      <canvas id="overlapWave" width="800" height="200"></canvas><br>
+      <progress id="userProgress" value="0" max="100"></progress>
+      <span id="userTime">00:00 / 00:00</span>
+      <br>
+      <span id="scoreResult"></span>
+    </div>
+    <audio id="userAudio" class="hidden"></audio>
+  </div>
+
+  <script src="main.js"></script>
+  <script>
+    // 추천 5가지 색상
+    const bgColors = [
+      "#F7F7E9", // 아이보리
+      "#ECECEC", // 밝은 회색
+      "#FFFDE4", // 크림색
+      "#E6F4EA", // 연한 민트
+      "#EAF6FB"  // 밝은 하늘색
+    ];
+    // 기본 선택값
+    let currentBgColorIdx = 0;
+    function setBgColor(idx) {
+      document.body.style.background = bgColors[idx];
+      document.getElementById('mainScreen').style.background = bgColors[idx];
+      document.getElementById('micTestScreen').style.background = bgColors[idx];
+      document.getElementById('stageScreen').style.background = bgColors[idx];
+      document.getElementById('gameScreen').style.background = bgColors[idx];
+      for(let i=0; i<bgColors.length; i++) {
+        const btn = document.getElementById('bgBtn'+i);
+        if (i === idx) btn.classList.add('selected');
+        else btn.classList.remove('selected');
+      }
+      currentBgColorIdx = idx;
+    }
+    document.addEventListener("DOMContentLoaded", function() {
+      for(let j=0; j<bgColors.length; j++) {
+        document.getElementById('bgBtn'+j).onclick = () => setBgColor(j);
+      }
+      setBgColor(0);
+    });
+  </script>
+</body>
+</html>
