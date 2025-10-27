@@ -1,3 +1,5 @@
+// main.js - updated: thresholds for cleared50 / cleared70, robust challenge flow, best-score display below title
+
 const stageGroups = [
   { name: "독케익", prefix: "D_", count: 16 },
   { name: "니니아", prefix: "N_", count: 8 },
@@ -64,6 +66,7 @@ const gameBackBtn = document.getElementById('gameBackBtn');
 // 스테이지 리스트 DOM
 const stageList = document.getElementById('stageList');
 const currentSampleName = document.getElementById('currentSampleName');
+const bestScoreLabel = document.getElementById('bestScoreLabel');
 
 // 기존 게임 UI 변수
 const playSampleBtn = document.getElementById('playSampleBtn');
@@ -88,6 +91,12 @@ const chunkSize = 128;
 const barGroup = 8;
 const canvasLogicalWidth = 1000;
 const canvasLogicalHeight = 200;
+
+// 현재 선택된 스테이지 키 저장 (예: "D_1")
+let currentStageKey = null;
+// 점수 임계값
+const THRESHOLD_GREEN = 50;
+const THRESHOLD_GOLD = 70;
 
 // 화면 전환 함수
 function showScreen(screen) {
@@ -117,17 +126,40 @@ gameBackBtn.onclick = () => {
   renderStageList();
 };
 
-// 스테이지 선택 화면 렌더링 (그룹이름 줄, 그 아래 스테이지 버튼 줄 8개씩)
+// Helper: 로컬스토리지에서 저장된 점수 가져오기
+function getStoredScore(sampleName) {
+  const v = localStorage.getItem('score_' + sampleName);
+  return v ? Number(v) : null;
+}
+
+// Helper: 해당 스테이지 버튼에 등급별 클래스 적용/해제
+function updateStageButtonVisual(sampleName) {
+  const score = getStoredScore(sampleName);
+  const buttons = document.querySelectorAll(`button.stageBtn[data-sample="${sampleName}"]`);
+  buttons.forEach(btn => {
+    // 우선 기존 등급 클래스 제거
+    btn.classList.remove('cleared50', 'cleared70');
+
+    if (score !== null && !isNaN(score)) {
+      if (score >= THRESHOLD_GOLD) {
+        btn.classList.add('cleared70');
+      } else if (score >= THRESHOLD_GREEN) {
+        btn.classList.add('cleared50');
+      }
+    }
+  });
+}
+
+// 스테이지 선택 화면 렌더링
 function renderStageList() {
   stageList.innerHTML = '';
+
   stageGroups.forEach(group => {
-    // 그룹 이름 한 줄
     const groupLabelDiv = document.createElement('div');
     groupLabelDiv.className = 'stage-row';
     groupLabelDiv.innerHTML = `<span class="person-label">${group.name}</span>`;
     stageList.appendChild(groupLabelDiv);
 
-    // 스테이지 버튼 한 줄에 8개씩
     for (let row = 0; row < Math.ceil(group.count / 8); row++) {
       const rowDiv = document.createElement('div');
       rowDiv.className = 'stage-row';
@@ -138,28 +170,49 @@ function renderStageList() {
         const btn = document.createElement('button');
         btn.textContent = `${i}`;
         btn.className = 'stageBtn';
+        btn.dataset.sample = sampleName;
         btn.onclick = () => startGameScreen(sampleName, file);
         rowDiv.appendChild(btn);
       }
       stageList.appendChild(rowDiv);
     }
   });
+
+  // 모든 버튼이 DOM에 붙은 뒤에 상태(등급)를 한 번에 갱신
+  document.querySelectorAll('button.stageBtn[data-sample]').forEach(btn => {
+    updateStageButtonVisual(btn.dataset.sample);
+  });
 }
 
-// 게임 화면 진입 (여기서 표시명을 매핑)
+// 게임 화면 진입
 function startGameScreen(sampleName, file) {
   showScreen(gameScreen);
+  currentStageKey = sampleName;
+
   const displayName = stageDisplayNames[sampleName] || sampleName;
   currentSampleName.innerText = displayName;
   sampleAudio.src = file;
   resetGameUI();
+
+  // 현재 스테이지의 최고점 표시 갱신
+  updateCurrentStageBestScore(sampleName);
 }
 
-// 게임 화면 초기화 함수(결과, 재생 위치 등 초기화)
+// 현재 스테이지(게임 화면)에 최고점 텍스트를 표시
+function updateCurrentStageBestScore(sampleName) {
+  const score = getStoredScore(sampleName);
+  if (score === null) {
+    bestScoreLabel.innerText = '최고 점수: --점';
+  } else {
+    bestScoreLabel.innerText = `최고 점수: ${score}점`;
+  }
+}
+
+// 게임 UI 초기화
 function resetGameUI() {
   resultSection.classList.add('hidden');
-  sampleAudio.currentTime = 0;
-  userAudio.currentTime = 0;
+  try { if (sampleAudio) sampleAudio.currentTime = 0; } catch (e) {}
+  try { if (userAudio) userAudio.currentTime = 0; } catch (e) {}
   sampleProgress.value = 0;
   userProgress.value = 0;
   scoreResult.innerText = '';
@@ -200,6 +253,9 @@ function startMicTest() {
       ctx.stroke();
     }
     draw();
+  }).catch(e => {
+    console.error('마이크 테스트 시작 실패:', e);
+    alert('마이크 접근에 실패했습니다. 브라우저 권한을 허용했는지 확인하세요.');
   });
 }
 function stopMicTest() {
@@ -210,9 +266,9 @@ function stopMicTest() {
   }
 }
 
-// ====== 게임 로직 ======
+// ====== 게임 로직 및 유틸 ======
 
-// HiDPI/Retina 대응 및 화질 개선
+// HiDPI/Retina 대응
 function setCanvasHiDPI(canvas, width, height) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
@@ -223,11 +279,10 @@ function setCanvasHiDPI(canvas, width, height) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 
-// 전체 과정 재생바 표시/감춤
 function showFullProcessBar() {
   setCanvasHiDPI(fullProcessBar, 800, 70);
   fullProcessBar.style.display = 'block';
-  fullProcessTime.style.display = 'none'; // 시간 표시 감춤!
+  fullProcessTime.style.display = 'none';
 }
 function hideFullProcessBar() {
   fullProcessBar.style.display = 'none';
@@ -245,11 +300,11 @@ function drawFullProcessBar(elapsed, total, sample, prepare, record, phase) {
   const recordW = width * (record / total);
 
   ctx.fillStyle = "#2a9df4";
-  ctx.fillRect(1, 28, sampleW-2, 32);
+  ctx.fillRect(1, 28, Math.max(0, sampleW-2), 32);
   ctx.fillStyle = "#3dc463";
-  ctx.fillRect(sampleW+1, 28, prepareW-2, 32);
+  ctx.fillRect(sampleW+1, 28, Math.max(0, prepareW-2), 32);
   ctx.fillStyle = "#2a9df4";
-  ctx.fillRect(sampleW+prepareW+1, 28, recordW-2, 32);
+  ctx.fillRect(sampleW+prepareW+1, 28, Math.max(0, recordW-2), 32);
 
   ctx.strokeStyle = "#111";
   ctx.lineWidth = 2;
@@ -271,7 +326,6 @@ function drawFullProcessBar(elapsed, total, sample, prepare, record, phase) {
   ctx.stroke();
 }
 
-// 샘플 재생바 표시
 function updateSampleProgress() {
   const duration = sampleAudio.duration || 0;
   const current = sampleAudio.currentTime || 0;
@@ -289,7 +343,7 @@ sampleAudio.ontimeupdate = updateSampleProgress;
 sampleAudio.onloadedmetadata = updateSampleProgress;
 sampleAudio.onended = updateSampleProgress;
 
-// 샘플 음성 AudioBuffer 준비
+// 샘플 AudioBuffer 준비
 sampleAudio.onloadeddata = async () => {
   try {
     if (!sampleAudio.src) return;
@@ -308,68 +362,130 @@ playSampleBtn.onclick = () => {
   updateSampleProgress();
 };
 
-// 도전 버튼: 전체 과정 재생바에 맞춰 진행
+// Utility: 샘플 메타데이터가 로드될 때까지 기다림 (타임아웃 포함)
+function waitForSampleLoaded(timeoutMs = 3000) {
+  return new Promise(resolve => {
+    if (!sampleAudio.src) return resolve();
+    if (!isNaN(sampleAudio.duration) && sampleAudio.duration > 0) return resolve();
+    let settled = false;
+    function onLoaded() {
+      if (settled) return;
+      settled = true;
+      sampleAudio.removeEventListener('loadedmetadata', onLoaded);
+      resolve();
+    }
+    sampleAudio.addEventListener('loadedmetadata', onLoaded);
+    setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      sampleAudio.removeEventListener('loadedmetadata', onLoaded);
+      resolve();
+    }, timeoutMs);
+  });
+}
+
+// 도전 버튼: 전체 과정 재생바에 맞춰 진행 (안전 개선)
 challengeBtn.onclick = async () => {
   playSampleBtn.disabled = true;
   challengeBtn.disabled = true;
 
-  const sampleDuration = sampleAudio.duration || 0;
-  const prepareDuration = 1.0; // 준비시간 1초
-  const recordDuration = sampleDuration;
-  const totalDuration = sampleDuration + prepareDuration + recordDuration;
+  try {
+    await waitForSampleLoaded(4000);
 
-  showFullProcessBar();
-
-  sampleAudio.currentTime = 0;
-  sampleAudio.play();
-
-  let startTimestamp = performance.now();
-  let phase = "sample";
-  let lastPhase = null;
-  let timerId = null;
-  let recordingStarted = false;
-
-  async function processLoop(now) {
-    let elapsed = (now - startTimestamp) / 1000;
-    if (elapsed <= sampleDuration) {
-      phase = "sample";
-    } else if (elapsed <= sampleDuration + prepareDuration) {
-      phase = "prepare";
-    } else if (elapsed <= totalDuration) {
-      phase = "record";
-    } else {
-      phase = "done";
+    const sampleDuration = Number(sampleAudio.duration) || 0;
+    if (!sampleDuration || sampleDuration <= 0 || isNaN(sampleDuration)) {
+      alert('샘플이 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.');
+      return;
     }
-    drawFullProcessBar(elapsed, totalDuration, sampleDuration, prepareDuration, recordDuration, phase);
 
-    if (phase !== lastPhase) {
-      lastPhase = phase;
-      if (phase === "prepare") {
-        sampleAudio.pause();
+    const prepareDuration = 1.0;
+    const recordDuration = sampleDuration;
+    const totalDuration = sampleDuration + prepareDuration + recordDuration;
+
+    showFullProcessBar();
+
+    try { sampleAudio.currentTime = 0; } catch(e){}
+    const playPromise = sampleAudio.play();
+    if (playPromise && typeof playPromise.then === 'function') {
+      try { await playPromise; } catch(e){}
+    }
+
+    let startTimestamp = performance.now();
+    let phase = "sample";
+    let lastPhase = null;
+    let recordingStarted = false;
+    let rafId = null;
+
+    const loop = (now) => {
+      try {
+        let elapsed = (now - startTimestamp) / 1000;
+        if (elapsed <= sampleDuration) phase = "sample";
+        else if (elapsed <= sampleDuration + prepareDuration) phase = "prepare";
+        else if (elapsed <= totalDuration) phase = "record";
+        else phase = "done";
+
+        drawFullProcessBar(elapsed, totalDuration, sampleDuration, prepareDuration, recordDuration, phase);
+
+        if (phase !== lastPhase) {
+          lastPhase = phase;
+          if (phase === "prepare") {
+            try { sampleAudio.pause(); } catch(e){}
+          }
+          if (phase === "record" && !recordingStarted) {
+            recordingStarted = true;
+            startRecordingWithTimeout(recordDuration);
+          }
+        }
+
+        if (phase !== "done") rafId = requestAnimationFrame(loop);
+        else {
+          // final cleanup for UI (recording will be handled by recorder.onstop)
+          hideFullProcessBar();
+          playSampleBtn.disabled = false;
+          challengeBtn.disabled = false;
+        }
+      } catch (e) {
+        console.error('processLoop error:', e);
+        if (rafId) cancelAnimationFrame(rafId);
+        hideFullProcessBar();
+        playSampleBtn.disabled = false;
+        challengeBtn.disabled = false;
       }
-      if (phase === "record" && !recordingStarted) {
-        recordingStarted = true;
-        startRecordingWithTimeout(recordDuration);
-      }
-    }
-    if (phase !== "done") {
-      timerId = requestAnimationFrame(processLoop);
-    } else {
-      playSampleBtn.disabled = false;
-      challengeBtn.disabled = false;
-      hideFullProcessBar();
-    }
+    };
+
+    rafId = requestAnimationFrame(loop);
+
+  } catch (e) {
+    console.error('challenge flow error:', e);
+    alert('도전 시작 중 오류가 발생했습니다. 콘솔을 확인해주세요.');
+  } finally {
+    playSampleBtn.disabled = false;
+    challengeBtn.disabled = false;
   }
-  processLoop(performance.now());
 };
 
 // 녹음 시작, duration(초) 후 자동 종료 → 결과 화면 진입
 async function startRecordingWithTimeout(duration) {
   audioChunks = [];
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  mediaRecorder = new MediaRecorder(stream);
-  mediaRecorder.start();
+  let stream = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch (e) {
+    console.error('마이크 접근 실패:', e);
+    alert('마이크 접근에 실패했습니다. 권한을 확인하세요.');
+    return;
+  }
 
+  try {
+    mediaRecorder = new MediaRecorder(stream);
+  } catch (e) {
+    console.error('MediaRecorder 생성 실패:', e);
+    alert('브라우저가 MediaRecorder를 지원하지 않거나, 형식 문제로 실패했습니다.');
+    stream.getTracks().forEach(t => t.stop());
+    return;
+  }
+
+  mediaRecorder.start();
   showLiveWave(stream);
 
   mediaRecorder.ondataavailable = (e) => {
@@ -384,18 +500,24 @@ async function startRecordingWithTimeout(duration) {
 
   mediaRecorder.onstop = async () => {
     hideLiveWave();
+    try { if (stream) stream.getTracks().forEach(t => t.stop()); } catch(e){}
     const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
     userAudio.src = URL.createObjectURL(audioBlob);
     userAudio.load();
 
-    const arrayBuffer = await audioBlob.arrayBuffer();
-    const audioCtx2 = new (window.AudioContext || window.webkitAudioContext)();
-    userAudioBuffer = await audioCtx2.decodeAudioData(arrayBuffer);
+    try {
+      const arrayBuffer = await audioBlob.arrayBuffer();
+      const audioCtx2 = new (window.AudioContext || window.webkitAudioContext)();
+      userAudioBuffer = await audioCtx2.decodeAudioData(arrayBuffer);
+    } catch (e) {
+      console.error('사용자 녹음 디코드 실패:', e);
+    }
+
     showResultScreen();
   };
 }
 
-// 실시간 파형 표시 함수
+// 실시간 파형 표시
 function showLiveWave(stream) {
   liveWave.classList.remove('hidden');
   const ctx = liveWave.getContext('2d');
@@ -464,7 +586,7 @@ function getCorrelation(a, b) {
   return numerator / denominator;
 }
 
-// ====== 점수 룰렛 효과만 남김 ======
+// 결과 화면 및 점수 저장(최고점 유지)
 function showResultScreen() {
   resultSection.classList.remove('hidden');
   setCanvasHiDPI(overlapWave, canvasLogicalWidth, canvasLogicalHeight);
@@ -475,16 +597,27 @@ function showResultScreen() {
   const corr = getCorrelation(sampleVols, userVols);
   let score = corr >= 0.75 ? 100 : Math.max(0, Math.round(corr / 0.75 * 100));
 
-  // 점수 룰렛 효과
   let rouletteInterval = null;
   function startScoreRoulette() {
     rouletteInterval = setInterval(() => {
       scoreResult.innerText = `점수: ${Math.floor(Math.random() * 101)}점`;
-    }, 40); // 25 FPS
+    }, 40);
   }
   function stopScoreRoulette() {
     clearInterval(rouletteInterval);
     scoreResult.innerText = `점수: ${score}점`;
+
+    if (currentStageKey) {
+      try {
+        const prev = getStoredScore(currentStageKey);
+        const toStore = (prev === null) ? score : Math.max(prev, score);
+        localStorage.setItem('score_' + currentStageKey, String(toStore));
+      } catch (e) {
+        console.warn('로컬스토리지 저장 실패:', e);
+      }
+      updateStageButtonVisual(currentStageKey);
+      updateCurrentStageBestScore(currentStageKey);
+    }
   }
 
   startScoreRoulette();
@@ -499,7 +632,7 @@ function showResultScreen() {
   };
 }
 
-// animateBarGraph에 콜백 추가
+// animateBarGraph
 function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
   const ctx = canvas.getContext('2d');
   const width = canvasLogicalWidth;
@@ -551,57 +684,8 @@ function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
       userProgress.value = audioElem.currentTime || 0;
       userTime.innerText = `${formatTime(audioElem.currentTime)} / ${formatTime(audioElem.duration)}`;
     } else {
-      // 재생이 끝나면 점수 룰렛 멈춤
       if (typeof onEnd === "function") onEnd();
     }
   }
   draw();
 }
-
-
-// Electron main process - main.js
-const { app, BrowserWindow, session } = require('electron');
-const path = require('path');
-
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1100,
-    height: 850,
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      enableRemoteModule: false
-    }
-  });
-
-  // 로컬 index.html 로드
-  win.loadFile(path.join(__dirname, 'index.html'));
-
-  // 개발 중 디버그 필요하면 주석 해제
-  // win.webContents.openDevTools();
-}
-
-app.whenReady().then(() => {
-  // 미디어 권한 요청을 자동으로 허용 (마이크 사용 허가 다루기)
-  // 필요시 더 세부적으로 origin/permission을 체크할 수 있습니다.
-  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
-    if (permission === 'media' || permission === 'audioCapture' || permission === 'videoCapture') {
-      // 자동 허용: 사용자가 권한을 직접 거부/허용 하게 브라우저 UI가 뜨지 않으므로
-      // 보안을 위해 실제 배포시에는 origin 체크를 강하게 권장합니다.
-      callback(true);
-    } else {
-      callback(false);
-    }
-  });
-
-  createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
-
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
-});
