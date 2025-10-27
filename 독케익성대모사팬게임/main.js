@@ -1,4 +1,6 @@
-// main.js - updated: thresholds for cleared50 / cleared70, robust challenge flow, best-score display below title
+// main.js - full file with timing-tolerant scoring (cross-correlation alignment)
+// Includes: stage rendering, game flow, recording, scoring with lag compensation,
+// score persistence (localStorage), and stage button grade classes (50/70).
 
 const stageGroups = [
   { name: "독케익", prefix: "D_", count: 16 },
@@ -50,25 +52,22 @@ const stageDisplayNames = {
   "S_8": "후아앙"
 };
 
-// 화면 DIV
+// UI elements
 const mainScreen = document.getElementById('mainScreen');
 const micTestScreen = document.getElementById('micTestScreen');
 const stageScreen = document.getElementById('stageScreen');
 const gameScreen = document.getElementById('gameScreen');
 
-// 버튼
 const goStageBtn = document.getElementById('goStageBtn');
 const goMicTestBtn = document.getElementById('goMicTestBtn');
 const micTestBackBtn = document.getElementById('micTestBackBtn');
 const stageBackBtn = document.getElementById('stageBackBtn');
 const gameBackBtn = document.getElementById('gameBackBtn');
 
-// 스테이지 리스트 DOM
 const stageList = document.getElementById('stageList');
 const currentSampleName = document.getElementById('currentSampleName');
 const bestScoreLabel = document.getElementById('bestScoreLabel');
 
-// 기존 게임 UI 변수
 const playSampleBtn = document.getElementById('playSampleBtn');
 const challengeBtn = document.getElementById('challengeBtn');
 const sampleAudio = document.getElementById('sampleAudio');
@@ -87,73 +86,51 @@ const fullProcessTime = document.getElementById('fullProcessTime');
 
 let mediaRecorder, audioChunks = [], userAudioBuffer = null, sampleAudioBuffer = null;
 let liveWaveDrawing = false;
+
 const chunkSize = 128;
 const barGroup = 8;
 const canvasLogicalWidth = 1000;
 const canvasLogicalHeight = 200;
 
-// 현재 선택된 스테이지 키 저장 (예: "D_1")
+// stage state
 let currentStageKey = null;
-// 점수 임계값
 const THRESHOLD_GREEN = 50;
 const THRESHOLD_GOLD = 70;
 
-// 화면 전환 함수
+// --- navigation ---
 function showScreen(screen) {
   [mainScreen, micTestScreen, stageScreen, gameScreen].forEach(div => div.classList.add('hidden'));
   screen.classList.remove('hidden');
 }
 
-// 메인 화면 버튼
-goStageBtn.onclick = () => {
-  showScreen(stageScreen);
-  renderStageList();
-};
-goMicTestBtn.onclick = () => {
-  showScreen(micTestScreen);
-  startMicTest();
-};
-micTestBackBtn.onclick = () => {
-  showScreen(mainScreen);
-  stopMicTest();
-};
-stageBackBtn.onclick = () => {
-  showScreen(mainScreen);
-};
-gameBackBtn.onclick = () => {
-  showScreen(stageScreen);
-  resetGameUI();
-  renderStageList();
-};
+goStageBtn.onclick = () => { showScreen(stageScreen); renderStageList(); };
+goMicTestBtn.onclick = () => { showScreen(micTestScreen); startMicTest(); };
+micTestBackBtn.onclick = () => { showScreen(mainScreen); stopMicTest(); };
+stageBackBtn.onclick = () => { showScreen(mainScreen); };
+gameBackBtn.onclick = () => { showScreen(stageScreen); resetGameUI(); renderStageList(); };
 
-// Helper: 로컬스토리지에서 저장된 점수 가져오기
+// --- persistence helpers ---
 function getStoredScore(sampleName) {
   const v = localStorage.getItem('score_' + sampleName);
   return v ? Number(v) : null;
 }
 
-// Helper: 해당 스테이지 버튼에 등급별 클래스 적용/해제
+// update stage button classes based on thresholds
 function updateStageButtonVisual(sampleName) {
   const score = getStoredScore(sampleName);
   const buttons = document.querySelectorAll(`button.stageBtn[data-sample="${sampleName}"]`);
   buttons.forEach(btn => {
-    // 우선 기존 등급 클래스 제거
     btn.classList.remove('cleared50', 'cleared70');
-
     if (score !== null && !isNaN(score)) {
-      if (score >= THRESHOLD_GOLD) {
-        btn.classList.add('cleared70');
-      } else if (score >= THRESHOLD_GREEN) {
-        btn.classList.add('cleared50');
-      }
+      if (score >= THRESHOLD_GOLD) btn.classList.add('cleared70');
+      else if (score >= THRESHOLD_GREEN) btn.classList.add('cleared50');
     }
   });
 }
 
-// 스테이지 선택 화면 렌더링
+// render stage list and after DOM append update visuals
 function renderStageList() {
   stageList.innerHTML = '';
-
   stageGroups.forEach(group => {
     const groupLabelDiv = document.createElement('div');
     groupLabelDiv.className = 'stage-row';
@@ -166,7 +143,6 @@ function renderStageList() {
       for (let i = 1 + row * 8; i <= Math.min((row + 1) * 8, group.count); i++) {
         const sampleName = `${group.prefix}${i}`;
         const file = `samples/${group.prefix}${i}.mp3`;
-
         const btn = document.createElement('button');
         btn.textContent = `${i}`;
         btn.className = 'stageBtn';
@@ -178,37 +154,30 @@ function renderStageList() {
     }
   });
 
-  // 모든 버튼이 DOM에 붙은 뒤에 상태(등급)를 한 번에 갱신
+  // update visuals after appending
   document.querySelectorAll('button.stageBtn[data-sample]').forEach(btn => {
     updateStageButtonVisual(btn.dataset.sample);
   });
 }
 
-// 게임 화면 진입
+// --- game screen entry & best score display ---
 function startGameScreen(sampleName, file) {
   showScreen(gameScreen);
   currentStageKey = sampleName;
-
   const displayName = stageDisplayNames[sampleName] || sampleName;
   currentSampleName.innerText = displayName;
   sampleAudio.src = file;
   resetGameUI();
-
-  // 현재 스테이지의 최고점 표시 갱신
   updateCurrentStageBestScore(sampleName);
 }
 
-// 현재 스테이지(게임 화면)에 최고점 텍스트를 표시
 function updateCurrentStageBestScore(sampleName) {
   const score = getStoredScore(sampleName);
-  if (score === null) {
-    bestScoreLabel.innerText = '최고 점수: --점';
-  } else {
-    bestScoreLabel.innerText = `최고 점수: ${score}점`;
-  }
+  if (score === null) bestScoreLabel.innerText = '최고 점수: --점';
+  else bestScoreLabel.innerText = `최고 점수: ${score}점`;
 }
 
-// 게임 UI 초기화
+// --- UI reset ---
 function resetGameUI() {
   resultSection.classList.add('hidden');
   try { if (sampleAudio) sampleAudio.currentTime = 0; } catch (e) {}
@@ -221,7 +190,7 @@ function resetGameUI() {
   hideFullProcessBar();
 }
 
-// 마이크 테스트
+// --- mic test ---
 let testStream = null;
 let testWaveDrawing = false;
 function startMicTest() {
@@ -246,8 +215,7 @@ function startMicTest() {
       for (let i = 0; i < bufferLength; i++) {
         const x = (i / bufferLength) * testWave.width;
         const y = (dataArray[i] / 255) * testWave.height;
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.strokeStyle = "green";
       ctx.stroke();
@@ -260,15 +228,11 @@ function startMicTest() {
 }
 function stopMicTest() {
   testWaveDrawing = false;
-  if (testStream) {
-    testStream.getTracks().forEach(t => t.stop());
-    testStream = null;
-  }
+  if (testStream) testStream.getTracks().forEach(t => t.stop());
+  testStream = null;
 }
 
-// ====== 게임 로직 및 유틸 ======
-
-// HiDPI/Retina 대응
+// ====== canvas helpers / display ======
 function setCanvasHiDPI(canvas, width, height) {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
@@ -292,7 +256,6 @@ function drawFullProcessBar(elapsed, total, sample, prepare, record, phase) {
   const canvas = fullProcessBar;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
   const width = canvas.width / (window.devicePixelRatio || 1);
   const height = canvas.height / (window.devicePixelRatio || 1);
   const sampleW = width * (sample / total);
@@ -326,6 +289,7 @@ function drawFullProcessBar(elapsed, total, sample, prepare, record, phase) {
   ctx.stroke();
 }
 
+// sample progress
 function updateSampleProgress() {
   const duration = sampleAudio.duration || 0;
   const current = sampleAudio.currentTime || 0;
@@ -343,7 +307,7 @@ sampleAudio.ontimeupdate = updateSampleProgress;
 sampleAudio.onloadedmetadata = updateSampleProgress;
 sampleAudio.onended = updateSampleProgress;
 
-// 샘플 AudioBuffer 준비
+// preload sampleAudioBuffer (decode)
 sampleAudio.onloadeddata = async () => {
   try {
     if (!sampleAudio.src) return;
@@ -357,12 +321,12 @@ sampleAudio.onloadeddata = async () => {
 };
 
 playSampleBtn.onclick = () => {
-  sampleAudio.currentTime = 0;
+  try { sampleAudio.currentTime = 0; } catch (e) {}
   sampleAudio.play();
   updateSampleProgress();
 };
 
-// Utility: 샘플 메타데이터가 로드될 때까지 기다림 (타임아웃 포함)
+// --- Utility: wait for sample metadata ---
 function waitForSampleLoaded(timeoutMs = 3000) {
   return new Promise(resolve => {
     if (!sampleAudio.src) return resolve();
@@ -384,14 +348,13 @@ function waitForSampleLoaded(timeoutMs = 3000) {
   });
 }
 
-// 도전 버튼: 전체 과정 재생바에 맞춰 진행 (안전 개선)
+// --- challenge flow (safe) ---
 challengeBtn.onclick = async () => {
   playSampleBtn.disabled = true;
   challengeBtn.disabled = true;
 
   try {
     await waitForSampleLoaded(4000);
-
     const sampleDuration = Number(sampleAudio.duration) || 0;
     if (!sampleDuration || sampleDuration <= 0 || isNaN(sampleDuration)) {
       alert('샘플이 아직 로드되지 않았습니다. 잠시 후 다시 시도하세요.');
@@ -403,7 +366,6 @@ challengeBtn.onclick = async () => {
     const totalDuration = sampleDuration + prepareDuration + recordDuration;
 
     showFullProcessBar();
-
     try { sampleAudio.currentTime = 0; } catch(e){}
     const playPromise = sampleAudio.play();
     if (playPromise && typeof playPromise.then === 'function') {
@@ -439,7 +401,6 @@ challengeBtn.onclick = async () => {
 
         if (phase !== "done") rafId = requestAnimationFrame(loop);
         else {
-          // final cleanup for UI (recording will be handled by recorder.onstop)
           hideFullProcessBar();
           playSampleBtn.disabled = false;
           challengeBtn.disabled = false;
@@ -464,7 +425,7 @@ challengeBtn.onclick = async () => {
   }
 };
 
-// 녹음 시작, duration(초) 후 자동 종료 → 결과 화면 진입
+// --- recording ---
 async function startRecordingWithTimeout(duration) {
   audioChunks = [];
   let stream = null;
@@ -488,14 +449,10 @@ async function startRecordingWithTimeout(duration) {
   mediaRecorder.start();
   showLiveWave(stream);
 
-  mediaRecorder.ondataavailable = (e) => {
-    audioChunks.push(e.data);
-  };
+  mediaRecorder.ondataavailable = (e) => { audioChunks.push(e.data); };
 
   setTimeout(() => {
-    if (mediaRecorder && mediaRecorder.state === "recording") {
-      mediaRecorder.stop();
-    }
+    if (mediaRecorder && mediaRecorder.state === "recording") mediaRecorder.stop();
   }, duration * 1000);
 
   mediaRecorder.onstop = async () => {
@@ -517,7 +474,7 @@ async function startRecordingWithTimeout(duration) {
   };
 }
 
-// 실시간 파형 표시
+// live wave
 function showLiveWave(stream) {
   liveWave.classList.remove('hidden');
   const ctx = liveWave.getContext('2d');
@@ -529,7 +486,6 @@ function showLiveWave(stream) {
   analyser.fftSize = 2048;
   const bufferLength = analyser.fftSize;
   const dataArray = new Uint8Array(bufferLength);
-
   liveWaveDrawing = true;
 
   function draw() {
@@ -541,52 +497,111 @@ function showLiveWave(stream) {
     for (let i = 0; i < bufferLength; i++) {
       const x = (i / bufferLength) * liveWave.width;
       const y = (dataArray[i] / 255) * liveWave.height;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     }
     ctx.strokeStyle = "green";
     ctx.stroke();
   }
   draw();
 }
-function hideLiveWave() {
-  liveWaveDrawing = false;
-  liveWave.classList.add('hidden');
-}
+function hideLiveWave() { liveWaveDrawing = false; liveWave.classList.add('hidden'); }
 
-function getVolumeChunks(audioBuffer, chunkSize=128) {
+// ===== scoring helpers =====
+
+// compute volume chunks from AudioBuffer
+function getVolumeChunks(audioBuffer, chunkSizeParam = chunkSize) {
   if (!audioBuffer) return [];
   const data = audioBuffer.getChannelData(0);
-  const chunkCount = Math.floor(data.length / chunkSize);
+  const chunkCount = Math.floor(data.length / chunkSizeParam);
   const vols = [];
   for (let i = 0; i < chunkCount; i++) {
     let vol = 0;
-    for (let j = 0; j < chunkSize; j++) {
-      vol += Math.abs(data[i * chunkSize + j]);
-    }
-    vol /= chunkSize;
+    for (let j = 0; j < chunkSizeParam; j++) vol += Math.abs(data[i * chunkSizeParam + j]);
+    vol /= chunkSizeParam;
     vols.push(vol);
   }
   return vols;
 }
 
-function getCorrelation(a, b) {
-  const n = Math.min(a.length, b.length);
-  let sumA = 0, sumB = 0, sumAA = 0, sumBB = 0, sumAB = 0;
+// normalize an array (zero mean, unit variance)
+function normalizeArray(arr) {
+  const n = arr.length;
+  if (n === 0) return [];
+  let mean = 0;
+  for (let i = 0; i < n; i++) mean += arr[i];
+  mean /= n;
+  let varSum = 0;
   for (let i = 0; i < n; i++) {
-    sumA += a[i];
-    sumB += b[i];
-    sumAA += a[i] * a[i];
-    sumBB += b[i] * b[i];
-    sumAB += a[i] * b[i];
+    const d = arr[i] - mean;
+    varSum += d * d;
   }
-  const numerator = n * sumAB - sumA * sumB;
-  const denominator = Math.sqrt((n * sumAA - sumA * sumA) * (n * sumBB - sumB * sumB));
-  if (denominator === 0) return 0;
-  return numerator / denominator;
+  const std = Math.sqrt(varSum / n) || 1;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) out[i] = (arr[i] - mean) / std;
+  return out;
 }
 
-// 결과 화면 및 점수 저장(최고점 유지)
+// normalized cross-correlation at lag (positive lag means user delayed)
+function crossCorrelationAtLag(a, b, lag) {
+  const startA = Math.max(0, -lag);
+  const startB = Math.max(0, lag);
+  const n = Math.min(a.length - startA, b.length - startB);
+  if (n <= 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += a[startA + i] * b[startB + i];
+  return sum / n;
+}
+
+// find best lag within +/- maxLagChunks
+function findBestLagCorrelation(sampleVols, userVols, maxLagChunks = 20) {
+  if (!sampleVols || !userVols || sampleVols.length === 0 || userVols.length === 0) {
+    return { bestCorr: 0, bestLag: 0 };
+  }
+  const a = normalizeArray(sampleVols);
+  const b = normalizeArray(userVols);
+  let bestCorr = -Infinity;
+  let bestLag = 0;
+  for (let lag = -maxLagChunks; lag <= maxLagChunks; lag++) {
+    const corr = crossCorrelationAtLag(a, b, lag);
+    if (corr > bestCorr) { bestCorr = corr; bestLag = lag; }
+  }
+  if (!isFinite(bestCorr)) bestCorr = 0;
+  bestCorr = Math.max(-1, Math.min(1, bestCorr));
+  return { bestCorr, bestLag };
+}
+
+// map corr to 0..100 score
+function corrToScore(corr) {
+  const positive = Math.max(0, corr);
+  const score = Math.round(Math.min(100, (positive / 0.75) * 100));
+  return score;
+}
+
+const DEFAULT_MAX_LAG_CHUNKS = 20;
+
+function computeScoreWithAlignment(sampleVols, userVols) {
+  if (!sampleVols.length || !userVols.length) return { score: 0, bestCorr:0, bestLag:0 };
+
+  function smooth(arr) {
+    if (arr.length < 3) return arr.slice();
+    const out = new Array(arr.length);
+    out[0] = arr[0];
+    for (let i = 1; i < arr.length - 1; i++) out[i] = (arr[i - 1] + arr[i] + arr[i + 1]) / 3;
+    out[arr.length - 1] = arr[arr.length - 1];
+    return out;
+  }
+
+  const sSm = smooth(sampleVols);
+  const uSm = smooth(userVols);
+
+  const { bestCorr, bestLag } = findBestLagCorrelation(sSm, uSm, DEFAULT_MAX_LAG_CHUNKS);
+  const lagPenalty = Math.max(0, Math.abs(bestLag) - 2) * 0.01;
+  const adjustedCorr = Math.max(0, bestCorr - lagPenalty);
+  const score = corrToScore(adjustedCorr);
+  return { score, bestCorr, bestLag };
+}
+
+// ====== result / scoring UI ======
 function showResultScreen() {
   resultSection.classList.remove('hidden');
   setCanvasHiDPI(overlapWave, canvasLogicalWidth, canvasLogicalHeight);
@@ -594,8 +609,8 @@ function showResultScreen() {
   const sampleVols = getVolumeChunks(sampleAudioBuffer, chunkSize);
   const userVols = getVolumeChunks(userAudioBuffer, chunkSize);
 
-  const corr = getCorrelation(sampleVols, userVols);
-  let score = corr >= 0.75 ? 100 : Math.max(0, Math.round(corr / 0.75 * 100));
+  // compute score with alignment
+  const { score, bestCorr, bestLag } = computeScoreWithAlignment(sampleVols, userVols);
 
   let rouletteInterval = null;
   function startScoreRoulette() {
@@ -607,6 +622,7 @@ function showResultScreen() {
     clearInterval(rouletteInterval);
     scoreResult.innerText = `점수: ${score}점`;
 
+    // save best (max) score
     if (currentStageKey) {
       try {
         const prev = getStoredScore(currentStageKey);
@@ -618,6 +634,9 @@ function showResultScreen() {
       updateStageButtonVisual(currentStageKey);
       updateCurrentStageBestScore(currentStageKey);
     }
+
+    // debug info (optional): log alignment details
+    console.debug('Scoring alignment', { bestCorr, bestLag, score });
   }
 
   startScoreRoulette();
@@ -632,13 +651,13 @@ function showResultScreen() {
   };
 }
 
-// animateBarGraph
+// animate bar graph
 function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
   const ctx = canvas.getContext('2d');
   const width = canvasLogicalWidth;
   const height = canvasLogicalHeight;
   const chunkCount = Math.min(sampleVols.length, userVols.length);
-  const groupCount = Math.ceil(chunkCount / barGroup);
+  const groupCount = Math.ceil(chunkCount / barGroup) || 1;
   const barWidth = width / groupCount;
   const scaleY = height * 0.9;
 
@@ -647,7 +666,7 @@ function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
   const globalMax = Math.max(maxSample, maxUser, 0.01);
 
   function draw() {
-    const curChunk = Math.floor((audioElem.currentTime / audioElem.duration) * chunkCount);
+    const curChunk = Math.floor((audioElem.currentTime / (audioElem.duration || 1)) * chunkCount);
     const curGroup = Math.floor(curChunk / barGroup);
     ctx.clearRect(0, 0, width, height);
 
@@ -664,6 +683,7 @@ function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
       ctx.fillStyle = "rgb(32,90,210)";
       ctx.fillRect(i * barWidth, height - h, barWidth * 0.7, h);
     }
+
     for (let i = 0; i <= curGroup; i++) {
       let uSum = 0, count = 0;
       for (let j = 0; j < barGroup && i * barGroup + j < chunkCount; j++) {
