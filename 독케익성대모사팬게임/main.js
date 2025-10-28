@@ -84,6 +84,11 @@ const liveWave = document.getElementById('liveWave');
 const fullProcessBar = document.getElementById('fullProcessBar');
 const fullProcessTime = document.getElementById('fullProcessTime');
 
+
+const resultCaptureBtn = document.getElementById('resultCaptureBtn'); // 결과 캡쳐 버튼
+const mp3DownloadBtn = document.getElementById('mp3DownloadBtn'); // MP3로 다운
+
+
 let mediaRecorder, audioChunks = [], userAudioBuffer = null, sampleAudioBuffer = null;
 let liveWaveDrawing = false;
 
@@ -708,4 +713,138 @@ function animateBarGraph(sampleVols, userVols, canvas, audioElem, onEnd) {
     }
   }
   draw();
+}
+
+
+// 결과 캡쳐
+resultCaptureBtn.onclick = async () => {
+  // 화면 캡쳐 후 다운
+  resultCaptureBtn.disabled = true;
+  try {
+    // html2canvas가 이미 HTML에서 로드되어 있음
+    if (typeof html2canvas === 'undefined') {
+      throw new Error('html2canvas를 찾을 수 없습니다.');
+    }
+
+    // 캡쳐 대상: gameScreen (game 화면이 없으면 body)
+    const target = document.getElementById('gameScreen') || document.body;
+
+    // 잠시 스크롤 위치 고정 (더 정확한 캡쳐를 위해)
+    const sx = window.scrollX, sy = window.scrollY;
+    window.scrollTo(0, 0);
+
+    const canvas = await html2canvas(target, {
+      useCORS: true,
+      backgroundColor: null,
+      scale: window.devicePixelRatio || 1
+    });
+
+    // 복원
+    window.scrollTo(sx, sy);
+
+    // Blob으로 변환 후 다운로드 (PNG)
+    await new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        if (!blob) { resolve(); return; }
+        const a = document.createElement('a');
+        const fnameBase = currentStageKey ? stageDisplayNames[currentStageKey] || currentStageKey : 'Dogcake_game';
+        a.href = URL.createObjectURL(blob);
+        a.download = `${fnameBase}_${Date.now()}.png`;
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => {
+          URL.revokeObjectURL(a.href);
+          document.body.removeChild(a);
+          resolve();
+        }, 200);
+      }, 'image/png');
+    });
+  } catch (e) {
+    console.error('공유(캡쳐) 실패:', e);
+    alert('화면 캡쳐 중 오류가 발생했습니다. 콘솔을 확인하세요.');
+  } finally {
+    resultCaptureBtn.disabled = false;
+  }
+}
+
+// MP3 다운로드 버튼 (녹음된 음성이 있을 때만 활성화)
+mp3DownloadBtn.onclick = async () => {
+  try {
+    if (!userAudioBuffer) {
+      alert('녹음된 음성이 없습니다.');
+      return;
+    }
+
+    // lamejs가 이미 HTML에서 로드되어 있음
+    if (typeof lamejs === 'undefined' && typeof window.lamejs === 'undefined') {
+      throw new Error('lamejs를 찾을 수 없습니다.');
+    }
+
+    const Lame = window.lamejs || lamejs;
+    if (!Lame || !Lame.Mp3Encoder) throw new Error('lamejs 로드 실패');
+
+    const channels = Math.min(2, userAudioBuffer.numberOfChannels || 1);
+    const sampleRate = userAudioBuffer.sampleRate || 44100;
+    const kbps = 128;
+    const mp3enc = new Lame.Mp3Encoder(channels, sampleRate, kbps);
+
+    // 채널별 Int16 변환
+    function floatTo16BitPCM(float32) {
+      const len = float32.length;
+      const out = new Int16Array(len);
+      for (let i = 0; i < len; i++) {
+        let s = Math.max(-1, Math.min(1, float32[i]));
+        out[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      return out;
+    }
+
+    const leftFloat = userAudioBuffer.getChannelData(0);
+    const left = floatTo16BitPCM(leftFloat);
+    let right = null;
+    if (channels === 2) {
+      const rightFloat = userAudioBuffer.getChannelData(1) || leftFloat;
+      right = floatTo16BitPCM(rightFloat);
+    }
+
+    const maxSamples = 1152;
+    const mp3Data = [];
+    if (channels === 1) {
+      for (let i = 0; i < left.length; i += maxSamples) {
+        const chunk = left.subarray(i, i + maxSamples);
+        const mp3buf = mp3enc.encodeBuffer(chunk);
+        if (mp3buf && mp3buf.length) mp3Data.push(mp3buf);
+      }
+    } else {
+      for (let i = 0; i < left.length; i += maxSamples) {
+        const leftChunk = left.subarray(i, i + maxSamples);
+        const rightChunk = right.subarray(i, i + maxSamples);
+        const mp3buf = mp3enc.encodeBuffer(leftChunk, rightChunk);
+        if (mp3buf && mp3buf.length) mp3Data.push(mp3buf);
+      }
+    }
+    const endBuf = mp3enc.flush();
+    if (endBuf && endBuf.length) mp3Data.push(endBuf);
+
+    // Blob으로 묶어 다운로드
+    const blobParts = mp3Data.map(b => (b instanceof Uint8Array ? b : new Uint8Array(b)));
+    const mp3Blob = new Blob(blobParts, { type: 'audio/mpeg' });
+    const a2 = document.createElement('a');
+
+    // 파일명: {스테이지명}_{타임스탬프}.mp3
+    const mp3NameBase = currentStageKey ? stageDisplayNames[currentStageKey] || currentStageKey : 'Dogcake_record';
+
+    a2.href = URL.createObjectURL(mp3Blob);
+    a2.download = `${mp3NameBase}_${Date.now()}.mp3`;
+    document.body.appendChild(a2);
+    a2.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(a2.href);
+      document.body.removeChild(a2);
+    }, 300);
+  } catch (err) {
+    console.error('MP3 변환/다운로드 실패:', err);
+    // alert('녹음 MP3 변환에 실패했습니다. 콘솔을 확인하세요.');
+    alert('녹음 MP3 변환에 실패했습니다.');
+  }
 }
