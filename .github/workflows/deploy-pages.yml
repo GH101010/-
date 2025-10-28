@@ -17,7 +17,7 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    # If you need node for a build step, you can enable this. For plain static files it's optional.
+    # Node 설치는 선택사항입니다. 정적 파일만 있다면 불필요합니다.
     - name: Setup Node.js (optional)
       uses: actions/setup-node@v4
       with:
@@ -29,7 +29,8 @@ jobs:
     - name: Upload artifact for deployment (project subfolder)
       uses: actions/upload-pages-artifact@v1
       with:
-        # Publish the project folder that contains index.html
+        # 여기를 실제 사이트 파일이 있는 폴더명으로 바꾸세요.
+        # 현재 프로젝트 구조대로라면 한글 폴더명 그대로 사용합니다:
         path: "독케익성대모사팬게임"
 
     - name: Deploy to GitHub Pages
