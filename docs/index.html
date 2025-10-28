@@ -5,6 +5,11 @@
   <title>독케익 성대모사 테스트</title>
   <!-- Gamja Flower 웹폰트 추가 -->
   <link href="https://fonts.googleapis.com/css2?family=Gamja+Flower&display=swap" rel="stylesheet">
+
+  <!-- 필요한 라이브러리들 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://unpkg.com/lamejs@1.2.0/lame.min.js"></script>
+
   <style>
     /* 루트 폰트 사이즈를 브라우저 기본보다 2px 크게 설정 */
     html { font-size: calc(100% + 2px); }
@@ -277,6 +282,9 @@
       <span id="userTime">00:00 / 00:00</span>
       <br>
       <span id="scoreResult"></span>
+      <br>
+      <button id="resultCaptureBtn">결과 캡쳐</button>
+      <button id="mp3DownloadBtn">MP3 다운</button>
     </div>
     <audio id="userAudio" class="hidden"></audio>
   </div>
